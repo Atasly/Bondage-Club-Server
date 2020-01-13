@@ -3,7 +3,7 @@
 // Main game objects
 var App = require("http").createServer();
 var DefaultOrigins = "http://www.bondageprojects.com:* https://www.bondageprojects.com:* http://bondageprojects.com:* https://bondageprojects.com:* http://www.bondageprojects.elementfx.com:* https://www.bondageprojects.elementfx.com:* http://bondageprojects.elementfx.com:* https://bondageprojects.elementfx.com:* http://127.0.0.1:* http://localhost:*";
-var IO = require("socket.io")(App, { origins: process.env.ORIGINS || DefaultOrigins, maxHttpBufferSize: 100000 } );
+var IO = require("socket.io")(App, { origins: process.env.ORIGINS || DefaultOrigins, maxHttpBufferSize: 200000 } );
 var BCrypt = require("bcrypt");
 var Account = [];
 var ChatRoom = [];
@@ -44,7 +44,7 @@ var MailTransporter = NodeMailer.createTransport({
 });
 
 // Connects to the Mongo Database
-DatabaseClient.connect(DatabaseURL, { useNewUrlParser: true }, function(err, db) {
+DatabaseClient.connect(DatabaseURL, { useUnifiedTopology: true, useNewUrlParser: true }, function(err, db) {
 	
 	// Keeps the database object
 	if (err) throw err;
@@ -142,6 +142,7 @@ function AccountCreate(data, socket) {
 						data.Password = hash;
 						data.Money = 100;
 						data.Creation = CommonTime();
+						data.LastLogin = CommonTime();
 						data.MemberNumber = NextMemberNumber;
 						NextMemberNumber++;
 						Database.collection("Accounts").insertOne(data, function(err, res) { if (err) throw err; });
@@ -218,6 +219,10 @@ function AccountLogin(data, socket) {
 							Database.collection("Accounts").updateOne({ AccountName : result.AccountName }, { $set: { MemberNumber: result.MemberNumber } }, function(err, res) { if (err) throw err; });
 						}
 
+						// Sets the last login date
+						result.LastLogin = CommonTime();
+						Database.collection("Accounts").updateOne({ AccountName : result.AccountName }, { $set: { LastLogin: result.LastLogin } }, function(err, res) { if (err) throw err; });
+
 						// Logs the account
 						result.ID = socket.id;
 						result.Environment = AccountGetEnvironment(socket);
@@ -259,6 +264,7 @@ function AccountUpdate(data, socket) {
 				delete data.Password;
 				delete data.Email;
 				delete data.Creation;
+				delete data.LastLogin;
 				delete data.Pose;
 				delete data.ActivePose;
 				delete data.ChatRoom;
@@ -542,7 +548,7 @@ function ChatRoomRemove(Acc, Reason, Dictionary) {
 					break;
 				}
 		} else {
-			Dictionary.push({Tag: "SourceCharacter", Text: Acc.Name, MemberNumber: Acc.MemberNumber});
+			if (!Dictionary || (Dictionary.length == 0)) Dictionary.push({Tag: "SourceCharacter", Text: Acc.Name, MemberNumber: Acc.MemberNumber});
 			ChatRoomMessage(Acc.ChatRoom, Acc.MemberNumber, Reason, "Action", null, Dictionary);
 			ChatRoomSync(Acc.ChatRoom, Acc.MemberNumber);
 		}
@@ -638,8 +644,8 @@ function ChatRoomCharacterUpdate(data, socket) {
 		if ((Acc != null) && (Acc.ChatRoom != null))
 			if (Acc.ChatRoom.Ban.indexOf(Acc.MemberNumber) < 0)
 				for (var A = 0; ((Acc.ChatRoom != null) && (A < Acc.ChatRoom.Account.length)); A++)
-					if (Acc.ChatRoom.Account[A].ID == data.ID)
-						if (ChatRoomGetAllowItem(Acc, Acc.ChatRoom.Account[A])) {
+					if ((Acc.ChatRoom.Account[A].ID == data.ID) && ChatRoomGetAllowItem(Acc, Acc.ChatRoom.Account[A]))
+						if ((typeof data.Appearance === "object") && (JSON.stringify(data.Appearance).length < 180000)) {
 							Database.collection("Accounts").updateOne({ AccountName : Acc.ChatRoom.Account[A].AccountName }, { $set: { Appearance: data.Appearance } }, function(err, res) { if (err) throw err; });
 							Acc.ChatRoom.Account[A].Appearance = data.Appearance;
 							Acc.ChatRoom.Account[A].ActivePose = data.ActivePose;
@@ -698,12 +704,14 @@ function ChatRoomAdmin(data, socket) {
 					if (data.Action == "Ban") {
 						Acc.ChatRoom.Ban.push(data.MemberNumber);
 						Acc.ChatRoom.Account[A].Socket.emit("ChatRoomSearchResponse", "RoomBanned");
-						Dictionary.push({Tag: "TargetCharacterName", Text: Acc.Name, MemberNumber: Acc.MemberNumber});
+						Dictionary.push({Tag: "SourceCharacter", Text: Acc.Name, MemberNumber: Acc.MemberNumber});
+						Dictionary.push({Tag: "TargetCharacterName", Text: Acc.ChatRoom.Account[A].Name, MemberNumber: Acc.ChatRoom.Account[A].MemberNumber});
 						ChatRoomRemove(Acc.ChatRoom.Account[A], "ServerBan", Dictionary);
 					}
 					else if (data.Action == "Kick") {
 						Acc.ChatRoom.Account[A].Socket.emit("ChatRoomSearchResponse", "RoomKicked");
-						Dictionary.push({Tag: "TargetCharacterName", Text: Acc.Name, MemberNumber: Acc.MemberNumber});
+						Dictionary.push({Tag: "SourceCharacter", Text: Acc.Name, MemberNumber: Acc.MemberNumber});
+						Dictionary.push({Tag: "TargetCharacterName", Text: Acc.ChatRoom.Account[A].Name, MemberNumber: Acc.ChatRoom.Account[A].MemberNumber});
 						ChatRoomRemove(Acc.ChatRoom.Account[A], "ServerKick", Dictionary);
 					}
 					else if ((data.Action == "MoveLeft") && (A != 0)) {
