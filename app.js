@@ -154,6 +154,7 @@ function AccountCreate(data, socket) {
 						Account.push(data);
 						socket.emit("CreationResponse", { ServerAnswer: "AccountCreated", OnlineID: data.ID.toString(), MemberNumber: data.MemberNumber } );
 						AccountSendServerInfo(socket);
+						AccountPurgeInfo(data);
 					});
 
 				}
@@ -182,6 +183,21 @@ function AccountValidData(Account) {
 		if ((Account.BlackList == null) || !Array.isArray(Account.BlackList)) Account.BlackList = [];
 		if ((Account.FriendList == null) || !Array.isArray(Account.FriendList)) Account.FriendList = [];
 	}
+}
+
+// Purge some account info that's not required to be kept in memory on the server side
+function AccountPurgeInfo(A) {
+	delete A.Log;
+	delete A.Skill;
+	delete A.Wardrobe;
+	delete A.WardrobeCharacterNames;
+	delete A.ChatSettings;
+	delete A.VisualSettings;
+	delete A.AudioSettings;
+	delete A.GameplaySettings;
+	delete A.Email;
+	delete A.Password;
+	delete A.LastLogin;
 }
 
 // Load a single account file
@@ -234,7 +250,7 @@ function AccountLogin(data, socket) {
 						socket.emit("LoginResponse", result);
 						result.Socket = socket;
 						AccountSendServerInfo(socket);
-
+						AccountPurgeInfo(result);
 					} else socket.emit("LoginResponse", "InvalidNamePassword");
 				});
 
@@ -257,7 +273,7 @@ function AccountUpdate(data, socket) {
 	if ((data != null) && (typeof data === "object") && !Array.isArray(data))
 		for (var P = 0; P < Account.length; P++)
 			if (Account[P].ID == socket.id) {
-				
+
 				// Some data is never saved or updated from the client
 				delete data.Name;
 				delete data.AccountName;
@@ -285,7 +301,7 @@ function AccountUpdate(data, socket) {
 				if ((data.WhiteList != null) && Array.isArray(data.WhiteList)) Account[P].WhiteList = data.WhiteList;
 				if ((data.BlackList != null) && Array.isArray(data.BlackList)) Account[P].BlackList = data.BlackList;
 				if ((data.FriendList != null) && Array.isArray(data.FriendList)) Account[P].FriendList = data.FriendList;
-				
+
 				// If we have data to push
 				if (!ObjectEmpty(data)) Database.collection("Accounts").updateOne({ AccountName : Account[P].AccountName }, { $set: data }, function(err, res) { if (err) throw err; });
 				break;
@@ -309,7 +325,7 @@ function AccountQuery(data, socket) {
 				var Index = [];
 				for (var A = 0; A < Account.length; A++)
 					if ((Account[A].Environment == Acc.Environment) && (Account[A].Ownership != null) && (Account[A].Ownership.MemberNumber != null) && (Account[A].Ownership.MemberNumber == Acc.MemberNumber)) {
-						Friends.push( { Type: "Submissive", MemberNumber: Account[A].MemberNumber, MemberName: Account[A].Name, ChatRoomName: (Account[A].ChatRoom == null) ? null : Account[A].ChatRoom.Name } );
+						Friends.push({ Type: "Submissive", MemberNumber: Account[A].MemberNumber, MemberName: Account[A].Name, ChatRoomSpace: (Account[A].ChatRoom == null) ? null : Account[A].ChatRoom.Space, ChatRoomName: (Account[A].ChatRoom == null) ? null : Account[A].ChatRoom.Name });
 						Index.push(Account[A].MemberNumber);
 					}
 
@@ -320,7 +336,7 @@ function AccountQuery(data, socket) {
 							for (var A = 0; A < Account.length; A++)
 								if (Account[A].MemberNumber == Acc.FriendList[F]) {
 									if ((Account[A].Environment == Acc.Environment) && (Account[A].FriendList != null) && (Account[A].FriendList.indexOf(Acc.MemberNumber) >= 0))
-										Friends.push( { Type: "Friend", MemberNumber: Account[A].MemberNumber, MemberName: Account[A].Name, ChatRoomName: (Account[A].ChatRoom == null) ? null : (Account[A].ChatRoom.Private) ? "-Private-" : Account[A].ChatRoom.Name } );
+										Friends.push({ Type: "Friend", MemberNumber: Account[A].MemberNumber, MemberName: Account[A].Name, ChatRoomSpace: ((Account[A].ChatRoom != null) && !Account[A].ChatRoom.Private) ? Account[A].ChatRoom.Space : null, ChatRoomName: (Account[A].ChatRoom == null) ? null : (Account[A].ChatRoom.Private) ? "-Private-" : Account[A].ChatRoom.Name });
 									A = Account.length;
 								}
 
@@ -344,7 +360,7 @@ function AccountBeep(data, socket) {
 			for (var A = 0; A < Account.length; A++)
 				if (Account[A].MemberNumber == data.MemberNumber)
 					if ((Account[A].Environment == Acc.Environment) && (((Account[A].FriendList != null) && (Account[A].FriendList.indexOf(Acc.MemberNumber) >= 0)) || ((Account[A].Ownership != null) && (Account[A].Ownership.MemberNumber != null) && (Account[A].Ownership.MemberNumber == Acc.MemberNumber))))
-						Account[A].Socket.emit("AccountBeep", {MemberNumber: Acc.MemberNumber, MemberName: Acc.Name, ChatRoomName: (Acc.ChatRoom == null) ? null : Acc.ChatRoom.Name});
+						Account[A].Socket.emit("AccountBeep", { MemberNumber: Acc.MemberNumber, MemberName: Acc.Name, ChatRoomSpace: (Acc.ChatRoom == null) ? null : Acc.ChatRoom.Space, ChatRoomName: (Acc.ChatRoom == null) ? null : Acc.ChatRoom.Name });
 
 	}
 }
